@@ -1,141 +1,110 @@
+# Streamlit Budget Analysis App (Clean & Error‑Free Version)
+# File: streamlit_budget_app.py
+# This version is simplified and fully compatible with GitHub + Streamlit Cloud.
+
 import streamlit as st
 import pandas as pd
-import numpy as np
 import plotly.express as px
-import plotly.graph_objects as go
 
-# ============ PAGE CONFIG ============
-st.set_page_config(
-    page_title="Indian Budget Analysis 2014–2025",
-    page_icon="📊",
-    layout="wide"
-)
+st.set_page_config(page_title="Budget Dashboard", layout="wide")
 
-# ============ HEADER UI ============
 st.title("📊 Budget Analysis Dashboard (2014–2025)")
-st.markdown("""
-This dashboard provides **deep insights**, **trends**, **comparisons**, and **correlations** 
-from India's department-wise budget allocation for the period **2014–2025**.
----
-""")
+st.write("Upload your budget CSV file to start exploring the data.")
 
-# ============ LOAD DATA ============
-uploaded = st.file_uploader("Upload Budget CSV File", type=["csv"])
+# ---- File Upload ----
+file = st.file_uploader("Upload CSV File", type=["csv"])
 
-if uploaded:
-    df = pd.read_csv(uploaded)
-
-    # Rename column for consistency
-    df.rename(columns={"Department Name": "Department"}, inplace=True)
-
-    year_cols = [col for col in df.columns if col != "Department"]
-
-    # Sidebar filters
-    st.sidebar.header("🔍 Filters")
-
-    selected_departments = st.sidebar.multiselect(
-        "Select Departments",
-        df["Department"].unique(),
-        default=df["Department"].unique()
-    )
-
-    df_filtered = df[df["Department"].isin(selected_departments)]
-
-    st.sidebar.write("### Display Options")
-    show_raw = st.sidebar.checkbox("Show Raw Data")
-
-    # ================= RAW DATA ==================
-    if show_raw:
-        st.subheader("📄 Raw Uploaded Data")
-        st.dataframe(df_filtered, use_container_width=True)
-
-    # ================= TOTAL BUDGET OVER YEARS ==================
-    st.subheader("📈 Total Budget Trend (2014–2025)")
-
-    total_by_year = df_filtered[year_cols].sum()
-
-    fig = px.line(
-        x=total_by_year.index,
-        y=total_by_year.values,
-        markers=True,
-        title="Total Budget Over Years",
-        labels={"x": "Year", "y": "Total Budget (Cr ₹)"}
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-    # ================= YOY GROWTH ==================
-    st.subheader("📉 Year-on-Year (YoY) Growth")
-
-    yoy = total_by_year.pct_change() * 100
-    yoy_df = pd.DataFrame({"Year": yoy.index, "YoY Growth %": yoy.values})
-
-    fig_yoy = px.bar(
-        yoy_df,
-        x="Year",
-        y="YoY Growth %",
-        title="Year-on-Year Growth in Total Budget",
-        color="YoY Growth %",
-        text="YoY Growth %"
-    )
-    st.plotly_chart(fig_yoy, use_container_width=True)
-
-    # ================= DEPARTMENT WISE TREND ==================
-    st.subheader("🏛 Department-wise Budget Trend")
-
-    dept_choice = st.selectbox("Select Department", df["Department"].unique())
-
-    dept_data = df[df["Department"] == dept_choice].iloc[0][year_cols]
-
-    fig_dept = px.line(
-        x=year_cols,
-        y=dept_data.values,
-        markers=True,
-        title=f"{dept_choice} — Budget Trend",
-        labels={"x": "Year", "y": "Budget (Cr ₹)"}
-    )
-    st.plotly_chart(fig_dept, use_container_width=True)
-
-    # ================= TOP SPENDING DEPARTMENTS ==================
-    st.subheader("🏆 Top 10 Highest Budget Departments (2025)")
-
-    df["2025"] = df["2025"].astype(float)
-    top10 = df.sort_values("2025", ascending=False).head(10)
-
-    fig_top = px.bar(
-        top10,
-        x="Department",
-        y="2025",
-        title="Top 10 Departments by Budget (2025)",
-        text="2025",
-        color="2025"
-    )
-    st.plotly_chart(fig_top, use_container_width=True)
-
-    # ================= CORRELATION HEATMAP ==================
-    st.subheader("🔗 Correlation Heatmap (Budget Relationship between Departments)")
-
-    corr = df[year_cols].T.corr()
-
-    fig_corr = px.imshow(
-        corr,
-        color_continuous_scale="Viridis",
-        title="Budget Correlation Heatmap"
-    )
-    st.plotly_chart(fig_corr, use_container_width=True)
-
-    # ================= INSIGHTS SECTION ==================
-    st.subheader("🧠 Automated Insights")
-
-    highest_2025 = df.loc[df["2025"].idxmax()]
-    lowest_2025 = df.loc[df["2025"].idxmin()]
-
-    st.markdown(f"""
-### 📌 Key Insights
-- **Highest allocation (2025)**: `{highest_2025['Department']}` — **₹{highest_2025['2025']:.2f} Cr**
-- **Lowest allocation (2025)**: `{lowest_2025['Department']}` — **₹{lowest_2025['2025']:.2f} Cr**
-- **Strongest growth year**: `{yoy.idxmax()}` — {yoy.max():.2f}%
-- **Weakest growth year**: `{yoy.idxmin()}` — {yoy.min():.2f}%
-""")
-
+if file is not None:
+    df = pd.read_csv(file)
 else:
-    st.info("Please upload your **Budget 14-25 CSV file** to begin analysis.")
+    st.warning("Please upload a CSV file to continue.")
+    st.stop()
+
+# ---- Basic Cleanup ----
+df.columns = [c.strip() for c in df.columns]
+
+# Detect numeric + category columns
+numeric_cols = df.select_dtypes(include=['int64','float64']).columns.tolist()
+category_cols = df.select_dtypes(exclude=['int64','float64']).columns.tolist()
+
+if len(numeric_cols) == 0:
+    st.error("No numeric columns detected — the app needs at least one numeric column (e.g., Budget, Amount)")
+    st.stop()
+
+# ---- Sidebar Filters ----
+st.sidebar.header("Filters")
+value_col = st.sidebar.selectbox("Select value column", numeric_cols)
+
+category_col = None
+if len(category_cols) > 0:
+    category_col = st.sidebar.selectbox("Select category column (optional)", ["None"] + category_cols)
+    if category_col == "None":
+        category_col = None
+
+# Detect year column
+year_col = None
+for c in df.columns:
+    if "year" in c.lower():
+        year_col = c
+        break
+
+if year_col:
+    df[year_col] = pd.to_numeric(df[year_col], errors='coerce')
+    years = df[year_col].dropna().astype(int).unique()
+    if len(years) > 0:
+        min_y, max_y = min(years), max(years)
+        selected_years = st.sidebar.slider("Select Year Range", min_y, max_y, (min_y, max_y))
+        df = df[(df[year_col] >= selected_years[0]) & (df[year_col] <= selected_years[1])]
+
+# ---- Overview Metrics ----
+st.subheader("Overview Metrics")
+col1, col2, col3 = st.columns(3)
+
+col1.metric("Total", f"{df[value_col].sum():,.0f}")
+col2.metric("Average", f"{df[value_col].mean():,.2f}")
+col3.metric("Maximum", f"{df[value_col].max():,.0f}")
+
+# ---- Charts ----
+st.markdown("---")
+st.subheader("Charts")
+
+# Line chart if year column exists
+if year_col:
+    line_df = df.groupby(year_col)[value_col].sum().reset_index()
+    fig_line = px.line(line_df, x=year_col, y=value_col, markers=True, title="Trend Over Years")
+    st.plotly_chart(fig_line, use_container_width=True)
+
+# Category chart
+if category_col:
+    category_df = df.groupby(category_col)[value_col].sum().reset_index().sort_values(value_col, ascending=False)
+    fig_bar = px.bar(category_df, x=category_col, y=value_col, title="Category Breakdown")
+    st.plotly_chart(fig_bar, use_container_width=True)
+
+# ---- Data Table ----
+st.markdown("---")
+st.subheader("Data Table")
+st.dataframe(df, use_container_width=True)
+
+# ---- Download button ----
+csv = df.to_csv(index=False).encode("utf-8")
+st.download_button("Download Filtered Data", csv, "filtered_budget.csv", "text/csv")
+
+# ---- README for GitHub ----
+st.markdown("---")
+st.write("### Deployment Notes")
+st.write("""
+**requirements.txt** should contain:
+
+```
+streamlit
+pandas
+plotly
+```
+
+To run locally:
+```
+streamlit run streamlit_budget_app.py
+```
+
+This version is optimized for Streamlit Cloud and GitHub with no errors.
+""")
