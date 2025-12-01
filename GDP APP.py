@@ -1,161 +1,141 @@
-# -----------------------------------------------------------
-# Streamlit Data Analysis Web App
-# -----------------------------------------------------------
-# Features:
-# • Upload CSV
-# • Auto-detect numerical & categorical columns
-# • Data Cleaning + Missing value handling
-# • Summary statistics
-# • Trend Line Chart
-# • Bar chart for categorical comparison
-# • Scatter Plot
-# • Correlation Heatmap
-# • Sidebar filters (dynamic)
-# • Download cleaned CSV
-# -----------------------------------------------------------
-
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-import seaborn as sns
-import matplotlib.pyplot as plt
-import io
+import plotly.graph_objects as go
 
-st.set_page_config(page_title="Data Analysis App", layout="wide")
+# ============ PAGE CONFIG ============
+st.set_page_config(
+    page_title="Indian Budget Analysis 2014–2025",
+    page_icon="📊",
+    layout="wide"
+)
 
-# -----------------------------------------------------------
-# TITLE
-# -----------------------------------------------------------
-st.title("📊 Universal Data Analysis App")
-st.write("Upload your CSV file and explore data insights, charts, and relationships.")
+# ============ HEADER UI ============
+st.title("📊 Budget Analysis Dashboard (2014–2025)")
+st.markdown("""
+This dashboard provides **deep insights**, **trends**, **comparisons**, and **correlations** 
+from India's department-wise budget allocation for the period **2014–2025**.
+---
+""")
 
-# -----------------------------------------------------------
-# FILE UPLOADER
-# -----------------------------------------------------------
-uploaded_file = st.file_uploader("Upload CSV Dataset", type=["csv"])
+# ============ LOAD DATA ============
+uploaded = st.file_uploader("Upload Budget CSV File", type=["csv"])
 
-if uploaded_file:
-    df = pd.read_csv(uploaded_file)
+if uploaded:
+    df = pd.read_csv(uploaded)
 
-    st.subheader("📁 Raw Dataset Preview")
-    st.dataframe(df.head())
+    # Rename column for consistency
+    df.rename(columns={"Department Name": "Department"}, inplace=True)
 
-    # -----------------------------------------------------------
-    # DATA CLEANING
-    # -----------------------------------------------------------
-    st.subheader("🧹 Data Cleaning")
+    year_cols = [col for col in df.columns if col != "Department"]
 
-    st.write("**Handling Missing Values:**")
-    st.write("Missing values are filled using forward-fill and then backward-fill.")
+    # Sidebar filters
+    st.sidebar.header("🔍 Filters")
 
-    df_clean = df.copy()
-    df_clean = df_clean.ffill().bfill()
+    selected_departments = st.sidebar.multiselect(
+        "Select Departments",
+        df["Department"].unique(),
+        default=df["Department"].unique()
+    )
 
-    st.write("✅ Missing values handled successfully.")
-    st.write("### Cleaned Dataset Preview")
-    st.dataframe(df_clean.head())
+    df_filtered = df[df["Department"].isin(selected_departments)]
 
-    # -----------------------------------------------------------
-    # DATA TYPES + AUTO DETECTION
-    # -----------------------------------------------------------
-    st.subheader("🔍 Column Type Detection")
+    st.sidebar.write("### Display Options")
+    show_raw = st.sidebar.checkbox("Show Raw Data")
 
-    numeric_cols = df_clean.select_dtypes(include=[np.number]).columns.tolist()
-    categorical_cols = df_clean.select_dtypes(exclude=[np.number]).columns.tolist()
+    # ================= RAW DATA ==================
+    if show_raw:
+        st.subheader("📄 Raw Uploaded Data")
+        st.dataframe(df_filtered, use_container_width=True)
 
-    st.write("**Numeric Columns:**", numeric_cols)
-    st.write("**Categorical Columns:**", categorical_cols)
+    # ================= TOTAL BUDGET OVER YEARS ==================
+    st.subheader("📈 Total Budget Trend (2014–2025)")
 
-    # -----------------------------------------------------------
-    # SUMMARY STATISTICS
-    # -----------------------------------------------------------
-    st.subheader("📈 Summary Statistics")
-    st.dataframe(df_clean.describe())
+    total_by_year = df_filtered[year_cols].sum()
 
-    # -----------------------------------------------------------
-    # SIDEBAR FILTERS
-    # -----------------------------------------------------------
-    st.sidebar.header("Filter Data")
+    fig = px.line(
+        x=total_by_year.index,
+        y=total_by_year.values,
+        markers=True,
+        title="Total Budget Over Years",
+        labels={"x": "Year", "y": "Total Budget (Cr ₹)"}
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
-    filtered_df = df_clean.copy()
+    # ================= YOY GROWTH ==================
+    st.subheader("📉 Year-on-Year (YoY) Growth")
 
-    for col in categorical_cols:
-        unique_values = filtered_df[col].dropna().unique().tolist()
-        selected = st.sidebar.multiselect(f"Filter by {col}", unique_values, default=unique_values)
-        filtered_df = filtered_df[filtered_df[col].isin(selected)]
+    yoy = total_by_year.pct_change() * 100
+    yoy_df = pd.DataFrame({"Year": yoy.index, "YoY Growth %": yoy.values})
 
-    # -----------------------------------------------------------
-    # LINE CHART (TRENDS)
-    # -----------------------------------------------------------
-    st.subheader("📉 Trend Line Chart")
+    fig_yoy = px.bar(
+        yoy_df,
+        x="Year",
+        y="YoY Growth %",
+        title="Year-on-Year Growth in Total Budget",
+        color="YoY Growth %",
+        text="YoY Growth %"
+    )
+    st.plotly_chart(fig_yoy, use_container_width=True)
 
-    if len(numeric_cols) >= 2:
-        x_col = st.selectbox("Select X-axis (usually Year/Time)", numeric_cols)
-        y_col = st.selectbox("Select Y-axis for Trend", numeric_cols)
+    # ================= DEPARTMENT WISE TREND ==================
+    st.subheader("🏛 Department-wise Budget Trend")
 
-        fig_line = px.line(filtered_df, x=x_col, y=y_col, title=f"Trend of {y_col} over {x_col}")
-        st.plotly_chart(fig_line, use_container_width=True)
+    dept_choice = st.selectbox("Select Department", df["Department"].unique())
 
-        st.write(f"**Insight:** This chart shows how `{y_col}` changes with `{x_col}` over time or sequence.")
+    dept_data = df[df["Department"] == dept_choice].iloc[0][year_cols]
 
-    # -----------------------------------------------------------
-    # BAR CHART (CATEGORICAL COMPARISON)
-    # -----------------------------------------------------------
-    st.subheader("📊 Bar Chart – Categorical Comparison")
+    fig_dept = px.line(
+        x=year_cols,
+        y=dept_data.values,
+        markers=True,
+        title=f"{dept_choice} — Budget Trend",
+        labels={"x": "Year", "y": "Budget (Cr ₹)"}
+    )
+    st.plotly_chart(fig_dept, use_container_width=True)
 
-    if categorical_cols and numeric_cols:
-        cat_col = st.selectbox("Categorical Column", categorical_cols)
-        num_col = st.selectbox("Numeric Column for Comparison", numeric_cols)
+    # ================= TOP SPENDING DEPARTMENTS ==================
+    st.subheader("🏆 Top 10 Highest Budget Departments (2025)")
 
-        fig_bar = px.bar(
-            filtered_df.groupby(cat_col)[num_col].mean().reset_index(),
-            x=cat_col, y=num_col,
-            title=f"Average {num_col} by {cat_col}"
-        )
-        st.plotly_chart(fig_bar, use_container_width=True)
+    df["2025"] = df["2025"].astype(float)
+    top10 = df.sort_values("2025", ascending=False).head(10)
 
-        st.write(f"**Insight:** This chart compares average `{num_col}` across categories of `{cat_col}`.")
+    fig_top = px.bar(
+        top10,
+        x="Department",
+        y="2025",
+        title="Top 10 Departments by Budget (2025)",
+        text="2025",
+        color="2025"
+    )
+    st.plotly_chart(fig_top, use_container_width=True)
 
-    # -----------------------------------------------------------
-    # SCATTER PLOT (RELATIONSHIPS)
-    # -----------------------------------------------------------
-    st.subheader("⚖️ Scatter Plot – Relationship Between Variables")
+    # ================= CORRELATION HEATMAP ==================
+    st.subheader("🔗 Correlation Heatmap (Budget Relationship between Departments)")
 
-    if len(numeric_cols) >= 2:
-        x_scatter = st.selectbox("Scatter X-axis", numeric_cols, key="scatter_x")
-        y_scatter = st.selectbox("Scatter Y-axis", numeric_cols, key="scatter_y")
+    corr = df[year_cols].T.corr()
 
-        fig_scatter = px.scatter(filtered_df, x=x_scatter, y=y_scatter, trendline="ols",
-                                 title=f"Scatter Plot of {x_scatter} vs {y_scatter}")
-        st.plotly_chart(fig_scatter, use_container_width=True)
+    fig_corr = px.imshow(
+        corr,
+        color_continuous_scale="Viridis",
+        title="Budget Correlation Heatmap"
+    )
+    st.plotly_chart(fig_corr, use_container_width=True)
 
-        st.write(f"**Insight:** This plot shows how `{y_scatter}` changes with `{x_scatter}`. "
-                 "The OLS line helps visualize correlation.")
+    # ================= INSIGHTS SECTION ==================
+    st.subheader("🧠 Automated Insights")
 
-    # -----------------------------------------------------------
-    # CORRELATION HEATMAP
-    # -----------------------------------------------------------
-    st.subheader("🔥 Correlation Heatmap")
+    highest_2025 = df.loc[df["2025"].idxmax()]
+    lowest_2025 = df.loc[df["2025"].idxmin()]
 
-    if len(numeric_cols) >= 2:
-        corr = filtered_df[numeric_cols].corr()
-
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sns.heatmap(corr, annot=True, cmap="coolwarm", ax=ax)
-        st.pyplot(fig)
-
-        st.write("**Insight:** Darker colors represent stronger relationships between numeric variables.")
-
-    # -----------------------------------------------------------
-    # DOWNLOAD CLEANED CSV
-    # -----------------------------------------------------------
-    st.subheader("⬇️ Download Cleaned Dataset")
-
-    csv_buffer = io.BytesIO()
-    df_clean.to_csv(csv_buffer, index=False)
-    st.download_button("Download Cleaned CSV", data=csv_buffer.getvalue(),
-                       file_name="cleaned_dataset.csv", mime="text/csv")
+    st.markdown(f"""
+### 📌 Key Insights
+- **Highest allocation (2025)**: `{highest_2025['Department']}` — **₹{highest_2025['2025']:.2f} Cr**
+- **Lowest allocation (2025)**: `{lowest_2025['Department']}` — **₹{lowest_2025['2025']:.2f} Cr**
+- **Strongest growth year**: `{yoy.idxmax()}` — {yoy.max():.2f}%
+- **Weakest growth year**: `{yoy.idxmin()}` — {yoy.min():.2f}%
+""")
 
 else:
-    st.info("👆 Upload a CSV file to begin analysis.")
+    st.info("Please upload your **Budget 14-25 CSV file** to begin analysis.")
