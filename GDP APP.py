@@ -317,4 +317,4 @@ else:
                   y=metric_for_bar, title=f"Top {top_n} Years by {metric_for_bar}")
     st.plotly_chart(fig2, use_container_width=True)
     st.markdown("**Explanation:** Since the dataset has no categorical variables, we present a top-N bar chart of years "
-                f"ranked by `{metric_for_bar}` to allow easy compariso
+            f"ranked by `{metric_for_bar}` to allow easy compariso
